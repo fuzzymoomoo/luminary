@@ -1,36 +1,66 @@
 # Luminary
 
-Luminary is a local-first VS Code extension for exploring, organizing, and exporting large photo and video collections.
+> A local-first VS Code extension for browsing, organizing, and exporting photo and video collections.
 
-It is designed for messy real-world libraries that need structure without being pushed into a cloud service or a vendor-specific catalog.
+Luminary is built for real-world media libraries: years of folders, duplicates, half-organized imports, old exports, and collections that are too personal to hand over to a cloud catalog.
 
-## What Luminary Does
+It helps you make sense of that mess without locking the library to one machine or one hosted service.
+
+## Why Luminary
+
+Most photo tools assume one of two things:
+
+- your library already has structure
+- you are happy to upload everything into someone else's ecosystem
+
+Luminary takes a different approach.
+
+It works directly against a folder you choose, keeps its own sidecar metadata alongside the collection, and focuses on the practical workflows that make a neglected library usable again.
+
+## What You Can Do Today
 
 - browse a collection by year and month
-- open a month grid for quick visual review
+- open a month grid for visual review
 - scan for exact duplicates and review them before sending files to the OS trash
 - add tags that stay with the collection
 - build a reusable people library from face recognition matches
-- import a Facebook export into a clean year/month folder structure
+- import a Facebook export into a clean `year/month` folder structure
 - export either full-resolution copies or a resized zip bundle for sharing
 
-## Principles
+## What Makes It Different
 
-- local-first
-- privacy-friendly
-- works against a folder you choose
+- local-first by default
 - no hardcoded machine paths
-- metadata stays alongside the collection in a `.luminary` folder
+- sidecar metadata lives inside the chosen media root
+- destructive actions require explicit confirmation
+- the core experience still works even if optional AI features are unavailable
 
 ## Current Status
 
-Luminary is ready to run from source as a VS Code extension.
+Luminary is early, but usable.
 
-The first public goal is clarity and usability:
+Right now the project is focused on making the public version solid for other people to try:
 
-- a fresh user can point it at their own media library
-- the repo explains what gets stored and where
-- optional features fail gracefully instead of blocking the whole extension
+- clearer setup
+- safer defaults
+- better docs
+- cleaner packaging for future releases
+
+## Quick Start
+
+```powershell
+git clone https://github.com/fuzzymoomoo/luminary.git
+cd luminary
+npm install
+code .
+```
+
+Then:
+
+1. Press `F5` in VS Code to launch an Extension Development Host.
+2. In the new window, run `Luminary: Set Root Media Folder`.
+3. Choose the root folder that contains your media collection.
+4. Use the Luminary activity bar to explore the timeline, review duplicates, manage tags, export files, or try people matching and Facebook import.
 
 ## Requirements
 
@@ -38,24 +68,13 @@ The first public goal is clarity and usability:
 - Node.js `18+` on `PATH` if you want to use face recognition
 - a local photo or video collection you can point Luminary at
 
-Face recognition will try these TensorFlow backends in order:
+Face recognition tries these TensorFlow backends in order:
 
 1. `@tensorflow/tfjs-node-gpu`
 2. `@tensorflow/tfjs-node`
 3. `@tensorflow/tfjs`
 
-That means Luminary can still run when the native TensorFlow packages are unavailable, although face recognition will be slower on the pure JavaScript fallback.
-
-## Quick Start
-
-1. Clone the repo.
-2. Run `npm install`.
-3. Open the repo in VS Code.
-4. Press `F5` to launch an Extension Development Host.
-5. In the new window, run `Luminary: Set Root Media Folder`.
-6. Pick the root folder that contains your media library.
-
-From there you can use the Luminary activity bar to review the timeline, scan duplicates, manage tags, run exports, and open the people and Facebook import tools.
+So Luminary can still run when native TensorFlow packages are unavailable, although face recognition will be slower on the pure JavaScript fallback.
 
 ## Configuration
 
@@ -65,25 +84,23 @@ Luminary currently exposes one setting:
 | --- | --- | --- |
 | `luminary.rootFolder` | Root folder containing the photo or video collection you want Luminary to manage | empty |
 
-## What Gets Stored
+## Storage Model
 
-Luminary stores its working metadata inside the selected media root:
+Luminary stores its working metadata inside the selected media root in a `.luminary` folder:
 
 - `.luminary/scan-cache.json`
-  Scan cache and derived media metadata used to speed up timeline and duplicate operations.
 - `.luminary/tags.json`
-  Tag assignments for files in the collection.
 - `.luminary/people.json`
-  Saved people records and face descriptors for face recognition.
 
-This makes the setup portable. If you move the collection, you move the Luminary sidecar data with it.
+That makes the setup portable. If you move the library, you move Luminary's sidecar state with it.
 
 ## Safety Notes
 
-- Timeline browsing and scanning are read-only.
-- Duplicate review only removes files after an explicit confirmation, and uses the OS trash when available.
-- Export creates copies. It does not overwrite originals.
-- Facebook import copies media into a target folder and writes recovered dates to the copied files, not the source export.
+- timeline browsing and scanning are read-only
+- duplicate review only removes files after explicit confirmation
+- duplicate removal uses the OS trash when available
+- export creates copies and does not overwrite originals
+- Facebook import copies files into a target folder and writes recovered dates to the copied files, not the source export
 
 ## Documentation
 
@@ -97,11 +114,11 @@ This makes the setup portable. If you move the collection, you move the Luminary
 
 Near-term work is focused on:
 
-- packaging and release polish
+- release and packaging polish
 - better onboarding for non-developer users
-- clearer install guidance for face recognition backends
+- clearer guidance for face recognition setup
 - more import and cleanup workflows
 
-## Publishing Notes
+## License
 
-Luminary is published as an AGPL-licensed public project at `fuzzymoomoo/luminary`.
+Luminary is released under the GNU Affero General Public License v3.0. See [LICENSE](LICENSE).
