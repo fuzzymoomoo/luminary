@@ -4,10 +4,8 @@ This is the short list of work that still needs a deliberate decision before Lum
 
 ## Product And Repo Decisions
 
-- choose the public software license
-- create the public GitHub remote
-- decide whether the public repo should be named `luminary` or something more specific if the name is already taken
-- add final `repository`, `homepage`, and `bugs` metadata to `package.json` once the remote exists
+- review whether the current AGPL license remains the long-term fit as Marketplace distribution gets closer
+- keep `package.json` metadata in sync with the public GitHub remote if the repo moves or is renamed
 
 ## Extension Publishing Decisions
 

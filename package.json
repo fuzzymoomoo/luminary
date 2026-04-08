@@ -4,6 +4,15 @@
   "description": "Local-first photo and video collection manager for VS Code",
   "version": "0.1.0",
   "publisher": "fuzzymoomoo",
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fuzzymoomoo/luminary.git"
+  },
+  "homepage": "https://github.com/fuzzymoomoo/luminary",
+  "bugs": {
+    "url": "https://github.com/fuzzymoomoo/luminary/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

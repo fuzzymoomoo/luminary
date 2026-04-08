@@ -91,6 +91,7 @@ This makes the setup portable. If you move the collection, you move the Luminary
 - [Contributor Guide](CONTRIBUTING.md)
 - [Docs Index](docs/README.md)
 - [Architecture Notes](docs/architecture.md)
+- [License](LICENSE)
 
 ## Roadmap Direction
 
@@ -103,4 +104,4 @@ Near-term work is focused on:
 
 ## Publishing Notes
 
-Luminary has been cleaned up to stand on its own as a public project. The remaining release choices are mostly product-facing rather than technical, such as the final public repository remote and license choice.
+Luminary is published as an AGPL-licensed public project at `fuzzymoomoo/luminary`.
