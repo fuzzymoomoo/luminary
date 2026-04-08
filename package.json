@@ -1,0 +1,153 @@
+{
+  "name": "luminary",
+  "displayName": "Luminary",
+  "description": "Local-first photo and video collection manager for VS Code",
+  "version": "0.1.0",
+  "publisher": "fuzzymoomoo",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "photos",
+    "media",
+    "timeline",
+    "duplicates",
+    "tagging",
+    "face-recognition",
+    "vscode-extension"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "luminary",
+          "title": "Luminary",
+          "icon": "media/luminary.svg"
+        }
+      ]
+    },
+    "views": {
+      "luminary": [
+        {
+          "id": "luminaryTimeline",
+          "name": "Timeline"
+        },
+        {
+          "id": "luminaryDuplicates",
+          "name": "Duplicates",
+          "visibility": "collapsed"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "luminary.setRootFolder",
+        "title": "Luminary: Set Root Media Folder",
+        "icon": "$(folder-opened)"
+      },
+      {
+        "command": "luminary.refresh",
+        "title": "Luminary: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "luminary.openMonth",
+        "title": "Luminary: Open Month Grid"
+      },
+      {
+        "command": "luminary.scanDuplicates",
+        "title": "Luminary: Scan for Duplicates",
+        "icon": "$(search)"
+      },
+      {
+        "command": "luminary.openTags",
+        "title": "Luminary: Manage Tags",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "luminary.openExport",
+        "title": "Luminary: Export Selection",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "luminary.openFaceId",
+        "title": "Luminary: Face Recognition",
+        "icon": "$(person)"
+      },
+      {
+        "command": "luminary.openFacebookImport",
+        "title": "Luminary: Import from Facebook",
+        "icon": "$(cloud-upload)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "luminary.setRootFolder",
+          "when": "view == luminaryTimeline",
+          "group": "navigation@4"
+        },
+        {
+          "command": "luminary.refresh",
+          "when": "view == luminaryTimeline",
+          "group": "navigation@3"
+        },
+        {
+          "command": "luminary.openTags",
+          "when": "view == luminaryTimeline",
+          "group": "navigation@2"
+        },
+        {
+          "command": "luminary.openExport",
+          "when": "view == luminaryTimeline",
+          "group": "navigation@1"
+        },
+        {
+          "command": "luminary.openFaceId",
+          "when": "view == luminaryTimeline",
+          "group": "navigation@0"
+        },
+        {
+          "command": "luminary.openFacebookImport",
+          "when": "view == luminaryTimeline",
+          "group": "navigation@0"
+        },
+        {
+          "command": "luminary.scanDuplicates",
+          "when": "view == luminaryDuplicates",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Luminary",
+      "properties": {
+        "luminary.rootFolder": {
+          "type": "string",
+          "default": "",
+          "description": "Root folder containing your photo and video collection"
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "@tensorflow/tfjs": "^4.22.0",
+    "@vladmandic/face-api": "^1.7.14",
+    "archiver": "^6.0.1",
+    "jimp": "0.22.12"
+  },
+  "optionalDependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "@tensorflow/tfjs-node-gpu": "^4.22.0"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.3",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.85.0"
+  }
+}

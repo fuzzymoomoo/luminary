@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src {{cspSource}} data: blob:; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>Duplicates</title>
+  <style>/* __SHARED_CSS__ */</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h2>Duplicate Files</h2>
+  <div class="spacer"></div>
+  <span class="selection-count" id="summary"></span>
+  <span class="selection-count" id="bulkCount" style="display:none"></span>
+  <button class="secondary" id="btnSelectAll" style="display:none">Select All</button>
+  <button class="secondary" id="btnSelectImages" style="display:none">Select Images</button>
+  <button class="secondary" id="btnSelectVideos" style="display:none">Select Videos</button>
+  <button class="secondary" id="btnClearSel" style="display:none">Clear</button>
+  <button class="danger" id="btnDeleteSelected" style="display:none" disabled>Delete Selected Duplicates</button>
+  <button class="secondary" id="btnRescan">Re-scan</button>
+</div>
+
+<div id="root"></div>
+
+<script nonce="{{nonce}}">
+/* __SHARED_JS__ */
+
+const root      = document.getElementById('root');
+const summary   = document.getElementById('summary');
+const bulkCount = document.getElementById('bulkCount');
+
+// ── Bulk selection state ──────────────────────────────────────────────────────
+// Each entry: { groupIdx, markedForDelete: Set<string> }
+/** @type {Map<number, Set<string>>} */
+const selectedGroups = new Map();
+// All group markedForDelete sets, indexed by groupIdx
+/** @type {Map<number, Set<string>>} */
+const allGroupMarked = new Map();
+let totalGroupCount = 0;
+
+function updateBulkToolbar() {
+  const n = selectedGroups.size;
+  const show = totalGroupCount > 0;
+  document.getElementById('btnSelectAll').style.display      = show ? '' : 'none';
+  document.getElementById('btnSelectImages').style.display   = show ? '' : 'none';
+  document.getElementById('btnSelectVideos').style.display   = show ? '' : 'none';
+  document.getElementById('btnClearSel').style.display       = show ? '' : 'none';
+  document.getElementById('btnDeleteSelected').style.display = show ? '' : 'none';
+
+  if (!show) { bulkCount.style.display = 'none'; return; }
+
+  bulkCount.style.display = '';
+  if (n === 0) {
+    bulkCount.textContent = '0 groups selected';
+    document.getElementById('btnDeleteSelected').disabled = true;
+  } else {
+    const fileCount = [...selectedGroups.values()].reduce((s, m) => s + m.size, 0);
+    bulkCount.textContent = `${n} group${n > 1 ? 's' : ''} selected (${fileCount} file${fileCount !== 1 ? 's' : ''} to delete)`;
+    document.getElementById('btnDeleteSelected').disabled = fileCount === 0;
+  }
+}
+
+document.getElementById('btnSelectAll').onclick = () => {
+  for (const [idx, marked] of allGroupMarked) {
+    selectedGroups.set(idx, marked);
+    const card = root.querySelector(`[data-group-idx="${idx}"]`);
+    if (card) {
+      card.classList.add('bulk-selected');
+      const chk = card.querySelector('.group-select-chk');
+      if (chk) chk.checked = true;
+    }
+  }
+  updateBulkToolbar();
+};
+
+document.getElementById('btnClearSel').onclick = () => {
+  selectedGroups.clear();
+  root.querySelectorAll('.dup-group.bulk-selected').forEach(c => c.classList.remove('bulk-selected'));
+  root.querySelectorAll('.group-select-chk').forEach(c => c.checked = false);
+  updateBulkToolbar();
+};
+
+function selectGroupsByType(type) {
+  root.querySelectorAll(`.dup-group[data-group-type="${type}"]`).forEach(card => {
+    const idx = parseInt(card.dataset.groupIdx, 10);
+    const marked = allGroupMarked.get(idx);
+    if (!marked) return;
+    selectedGroups.set(idx, marked);
+    card.classList.add('bulk-selected');
+    const chk = card.querySelector('.group-select-chk');
+    if (chk) chk.checked = true;
+  });
+  updateBulkToolbar();
+}
+
+document.getElementById('btnSelectImages').onclick = () => selectGroupsByType('image');
+document.getElementById('btnSelectVideos').onclick = () => selectGroupsByType('video');
+
+document.getElementById('btnDeleteSelected').onclick = () => {
+  const filePaths = [];
+  for (const marked of selectedGroups.values()) {
+    for (const p of marked) filePaths.push(p);
+  }
+  if (filePaths.length) confirmDelete(filePaths);
+};
+
+// ── Render states ─────────────────────────────────────────────────────────────
+
+function showProgress(done, total, phase) {
+  const pct = total > 0 ? Math.round(done / total * 100) : 0;
+  root.innerHTML = `
+    <div class="progress-wrap">
+      <div class="progress-label">${phase || 'Scanning…'}</div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" style="width:${pct}%"></div>
+      </div>
+      <div class="progress-label">${done.toLocaleString()} / ${total.toLocaleString()}</div>
+    </div>`;
+  summary.textContent = '';
+  totalGroupCount = 0;
+  selectedGroups.clear();
+  allGroupMarked.clear();
+  updateBulkToolbar();
+}
+
+function renderGroups(groups) {
+  root.innerHTML = '';
+  selectedGroups.clear();
+  allGroupMarked.clear();
+  totalGroupCount = groups.length;
+
+  if (!groups.length) {
+    root.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">✅</div>
+        <div class="empty-label">No duplicates found</div>
+      </div>`;
+    summary.textContent = '';
+    updateBulkToolbar();
+    return;
+  }
+
+  const totalWaste = groups.reduce((s, g) => {
+    const sizes = g.files.map(f => f.size).sort((a, b) => a - b);
+    return s + sizes[0] * (sizes.length - 1);
+  }, 0);
+
+  summary.textContent = `${groups.length} groups · ~${formatSize(totalWaste)} reclaimable`;
+
+  groups.forEach((group, idx) => {
+    root.appendChild(buildGroupCard(group, idx));
+  });
+
+  updateBulkToolbar();
+}
+
+const VIDEO_EXTS = new Set(['mp4','mov','avi','mkv','mpg','mpeg','m4v','wmv','3gp']);
+
+function buildGroupCard(group, groupIdx) {
+  const wrap = document.createElement('div');
+  wrap.className = 'dup-group';
+  wrap.dataset.groupIdx  = groupIdx;
+  wrap.dataset.groupType = group.files[0].isImage ? 'image'
+    : VIDEO_EXTS.has(group.files[0].ext) ? 'video' : 'other';
+
+  // ── Group selection checkbox ──
+  const header = document.createElement('div');
+  header.className = 'dup-header';
+
+  const groupChkLabel = document.createElement('label');
+  groupChkLabel.style.cssText = 'display:flex;align-items:center;gap:6px;cursor:pointer;flex-shrink:0';
+  groupChkLabel.title = 'Select group for bulk deletion';
+  const groupChk = document.createElement('input');
+  groupChk.type = 'checkbox';
+  groupChk.className = 'group-select-chk';
+  groupChk.style.cssText = 'width:14px;height:14px;cursor:pointer';
+  groupChkLabel.appendChild(groupChk);
+  header.appendChild(groupChkLabel);
+
+  const headerInfo = document.createElement('span');
+  headerInfo.innerHTML = `<span>${group.files.length} identical files</span>
+    <span style="color:var(--vscode-descriptionForeground);font-weight:400;margin-left:8px">${formatSize(group.files[0].size)} each</span>`;
+  header.appendChild(headerInfo);
+
+  const spacer = document.createElement('span');
+  spacer.style.flex = '1';
+  header.appendChild(spacer);
+
+  wrap.appendChild(header);
+
+  // ── Per-file checkboxes ──
+  const filesRow = document.createElement('div');
+  filesRow.className = 'dup-files';
+
+  /** @type {Set<string>} */
+  const markedForDelete = new Set();
+  allGroupMarked.set(groupIdx, markedForDelete);
+
+  const fileEls = group.files.map((file, idx) => {
+    const col = document.createElement('div');
+    col.className = 'dup-file';
+
+    if (file.isImage && file.uri) {
+      const img = document.createElement('img');
+      img.src     = file.uri;
+      img.loading = 'lazy';
+      img.title   = file.path;
+      img.onclick = () => sendMessage('openInExplorer', { filePath: file.path });
+      col.appendChild(img);
+    } else {
+      const ico = document.createElement('div');
+      ico.className   = 'dup-file-icon';
+      ico.textContent = fileTypeIcon(file.ext);
+      col.appendChild(ico);
+    }
+
+    const name = document.createElement('div');
+    name.className   = 'dup-file-name';
+    name.textContent = file.name;
+    name.title       = file.path;
+    col.appendChild(name);
+
+    const p = document.createElement('div');
+    p.className   = 'dup-file-path';
+    p.textContent = file.path;
+    p.title       = file.path;
+    col.appendChild(p);
+
+    const dateEl = document.createElement('div');
+    dateEl.style.cssText = 'font-size:10px;color:var(--vscode-descriptionForeground)';
+    dateEl.textContent   = formatDate(file.takenAt);
+    col.appendChild(dateEl);
+
+    // Per-file delete checkbox
+    const label = document.createElement('label');
+    label.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:11px;cursor:pointer;';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    if (idx > 0) { chk.checked = true; markedForDelete.add(file.path); }
+    chk.onchange = () => {
+      if (chk.checked) markedForDelete.add(file.path);
+      else markedForDelete.delete(file.path);
+      // Sync bulk count if this group is selected
+      if (selectedGroups.has(groupIdx)) updateBulkToolbar();
+    };
+    label.appendChild(chk);
+    label.appendChild(document.createTextNode('Mark for delete'));
+    col.appendChild(label);
+
+    return col;
+  });
+
+  for (const col of fileEls) filesRow.appendChild(col);
+  wrap.appendChild(filesRow);
+
+  // ── Group checkbox toggle ──
+  groupChk.onchange = () => {
+    if (groupChk.checked) {
+      selectedGroups.set(groupIdx, markedForDelete);
+      wrap.classList.add('bulk-selected');
+    } else {
+      selectedGroups.delete(groupIdx);
+      wrap.classList.remove('bulk-selected');
+    }
+    updateBulkToolbar();
+  };
+
+  // ── Per-group actions ──
+  const actions = document.createElement('div');
+  actions.className = 'dup-actions';
+
+  const btnKeepFirst = document.createElement('button');
+  btnKeepFirst.className   = 'secondary';
+  btnKeepFirst.textContent = 'Keep First Only';
+  btnKeepFirst.onclick = () => confirmDelete(group.files.slice(1).map(f => f.path));
+  actions.appendChild(btnKeepFirst);
+
+  const btnKeepNewest = document.createElement('button');
+  btnKeepNewest.className   = 'secondary';
+  btnKeepNewest.textContent = 'Keep Newest Only';
+  btnKeepNewest.onclick = () => {
+    const sorted = [...group.files].sort((a, b) => b.takenAt - a.takenAt);
+    confirmDelete(sorted.slice(1).map(f => f.path));
+  };
+  actions.appendChild(btnKeepNewest);
+
+  const btnDeleteMarked = document.createElement('button');
+  btnDeleteMarked.className   = 'danger';
+  btnDeleteMarked.textContent = 'Delete Marked';
+  btnDeleteMarked.onclick = () => {
+    const toDelete = [...markedForDelete];
+    if (toDelete.length) confirmDelete(toDelete);
+  };
+  actions.appendChild(btnDeleteMarked);
+
+  wrap.appendChild(actions);
+  return wrap;
+}
+
+function confirmDelete(filePaths) {
+  if (!filePaths.length) return;
+  sendMessage('deleteFiles', { filePaths });
+}
+
+// ── Message handlers ──────────────────────────────────────────────────────────
+
+onMessage('scanStart', () => showProgress(0, 0, 'Starting scan…'));
+onMessage('progress',  (msg) => showProgress(msg.done, msg.total, msg.phase));
+onMessage('scanDone',  (msg) => renderGroups(msg.groups));
+
+document.getElementById('btnRescan').onclick = () => {
+  sendMessage('rescan', {});
+};
+
+sendMessage('ready', {});
+</script>
+</body>
+</html>

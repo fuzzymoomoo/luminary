@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>Import from Facebook</title>
+  <style>
+/* __SHARED_CSS__ */
+
+/* ── Wizard layout ─────────────────────────────────────────────────────────── */
+
+.wizard {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Steps ─────────────────────────────────────────────────────────────────── */
+
+.step {
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--vscode-sideBar-background, #252526);
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.step-num {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  background: var(--vscode-badge-background);
+  color: var(--vscode-badge-foreground);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; flex-shrink: 0;
+}
+.step-num.done { background: #2e7d32; color: #fff; }
+
+.step-body {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.step-body.hidden { display: none; }
+
+/* ── Path row ──────────────────────────────────────────────────────────────── */
+
+.path-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.path-display {
+  flex: 1;
+  font-size: 11px;
+  padding: 5px 8px;
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-input-border, #3c3c3c);
+  border-radius: 2px;
+  color: var(--vscode-descriptionForeground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-font-family);
+}
+
+/* ── Stat boxes ────────────────────────────────────────────────────────────── */
+
+.stat-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.stat-box {
+  flex: 1;
+  min-width: 100px;
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 4px;
+  padding: 10px 14px;
+  text-align: center;
+}
+.stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--vscode-foreground);
+}
+.stat-label {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground);
+  margin-top: 2px;
+}
+
+/* ── Progress bar ──────────────────────────────────────────────────────────── */
+
+.prog-bar-track {
+  width: 100%;
+  height: 4px;
+  background: var(--vscode-progressBar-background, #0e70c0);
+  border-radius: 2px;
+  margin: 4px 0;
+  overflow: hidden;
+}
+.prog-bar-fill {
+  height: 100%;
+  background: var(--vscode-button-background);
+  transition: width 0.2s;
+  width: 0%;
+}
+.prog-label {
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+}
+
+/* ── Import log ────────────────────────────────────────────────────────────── */
+
+.import-log {
+  height: 240px;
+  overflow-y: auto;
+  background: var(--vscode-terminal-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #333);
+  border-radius: 3px;
+  padding: 8px;
+  font-size: 11px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  line-height: 1.5;
+}
+.log-line { white-space: pre-wrap; word-break: break-all; }
+.log-ok   { color: #4caf50; }
+.log-warn { color: #ff9800; }
+.log-err  { color: #f44336; }
+
+/* ── Option row ─────────────────────────────────────────────────────────────── */
+
+.opt-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.opt-row input[type=checkbox] { cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h2>Import from Facebook Export</h2>
+</div>
+
+<div class="wizard">
+
+  <!-- ── Step 1: Source ────────────────────────────────────────────────── -->
+  <div class="step" id="step1">
+    <div class="step-header">
+      <div class="step-num" id="num1">1</div>
+      Select Facebook export source folder
+    </div>
+    <div class="step-body" id="body1">
+      <p style="font-size:12px;color:var(--vscode-descriptionForeground)">
+        Select the <strong>posts</strong> folder inside your Facebook export archive.
+        Example: <code>facebook-export/your_facebook_activity/posts</code>
+      </p>
+      <div class="path-row">
+        <div class="path-display" id="srcDisplay">No folder selected</div>
+        <button id="btnPickSrc">Browse…</button>
+      </div>
+      <div id="srcWarn" style="display:none;font-size:11px;color:#ff9800">
+        ⚠ This folder doesn't look like a Facebook posts folder (no album/ or media/ found).
+        You can continue anyway.
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button id="btnScan" disabled>Scan HTML files →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Scan results ──────────────────────────────────────────── -->
+  <div class="step" id="step2">
+    <div class="step-header">
+      <div class="step-num" id="num2">2</div>
+      Scan results
+    </div>
+    <div class="step-body hidden" id="body2">
+      <div id="scanProgress" style="display:none">
+        <div class="prog-label" id="scanProgressText">Scanning…</div>
+        <div class="prog-bar-track"><div class="prog-bar-fill" style="width:100%;animation:pulse 1s ease-in-out infinite alternate"></div></div>
+        <style>@keyframes pulse{from{opacity:.4}to{opacity:1}}</style>
+      </div>
+      <div id="scanResults" style="display:none">
+        <div class="stat-row">
+          <div class="stat-box">
+            <div class="stat-value" id="statTotal">0</div>
+            <div class="stat-label">Media files found</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="statHtml">0</div>
+            <div class="stat-label">HTML files parsed</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="statWithDate">0</div>
+            <div class="stat-label">With date</div>
+          </div>
+          <div class="stat-box">
+            <div class="stat-value" id="statNoDate">0</div>
+            <div class="stat-label">No date found</div>
+          </div>
+        </div>
+      </div>
+      <div id="scanError" style="display:none;color:#f44336;font-size:12px"></div>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Target ────────────────────────────────────────────────── -->
+  <div class="step" id="step3">
+    <div class="step-header">
+      <div class="step-num" id="num3">3</div>
+      Select target folder
+    </div>
+    <div class="step-body hidden" id="body3">
+      <p style="font-size:12px;color:var(--vscode-descriptionForeground)">
+        Files will be organised into <code>YEAR/Month/filename.ext</code> subfolders.
+        Files without a detected date go into <code>unknown/</code>.
+      </p>
+      <div class="path-row">
+        <div class="path-display" id="destDisplay">No folder selected</div>
+        <button id="btnPickDest">Browse…</button>
+      </div>
+      <div class="opt-row">
+        <input type="checkbox" id="chkUnknown" checked>
+        <label for="chkUnknown">Copy files with no detected date to <code>unknown/</code></label>
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button id="btnImport" disabled>Start import →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 4: Progress ──────────────────────────────────────────────── -->
+  <div class="step" id="step4">
+    <div class="step-header">
+      <div class="step-num" id="num4">4</div>
+      Import progress
+    </div>
+    <div class="step-body hidden" id="body4">
+      <div class="prog-label" id="importProgressText">Starting…</div>
+      <div class="prog-bar-track"><div class="prog-bar-fill" id="importBar"></div></div>
+      <div class="import-log" id="importLog"></div>
+      <div id="importSummary" style="display:none;font-size:12px;font-weight:600;padding-top:4px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="danger" id="btnAbort" style="display:none">Abort</button>
+        <button id="btnNewImport" style="display:none">New import</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- wizard -->
+
+<script nonce="{{nonce}}">
+/* __SHARED_JS__ */
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let srcFolder  = '';
+let destFolder = '';
+let scanOk     = false;
+
+// ── Element refs ──────────────────────────────────────────────────────────────
+
+const btnPickSrc  = document.getElementById('btnPickSrc');
+const btnScan     = document.getElementById('btnScan');
+const srcDisplay  = document.getElementById('srcDisplay');
+const srcWarn     = document.getElementById('srcWarn');
+
+const body2          = document.getElementById('body2');
+const scanProgress   = document.getElementById('scanProgress');
+const scanProgressTx = document.getElementById('scanProgressText');
+const scanResults    = document.getElementById('scanResults');
+const scanError      = document.getElementById('scanError');
+const statTotal      = document.getElementById('statTotal');
+const statHtml       = document.getElementById('statHtml');
+const statWithDate   = document.getElementById('statWithDate');
+const statNoDate     = document.getElementById('statNoDate');
+
+const body3      = document.getElementById('body3');
+const destDisplay = document.getElementById('destDisplay');
+const btnPickDest = document.getElementById('btnPickDest');
+const chkUnknown  = document.getElementById('chkUnknown');
+const btnImport   = document.getElementById('btnImport');
+
+const body4            = document.getElementById('body4');
+const importProgressTx = document.getElementById('importProgressText');
+const importBar        = document.getElementById('importBar');
+const importLog        = document.getElementById('importLog');
+const importSummary    = document.getElementById('importSummary');
+const btnAbort         = document.getElementById('btnAbort');
+const btnNewImport     = document.getElementById('btnNewImport');
+
+// ── Step number helpers ───────────────────────────────────────────────────────
+
+function markDone(n) {
+  const el = document.getElementById('num' + n);
+  el.textContent = '✓';
+  el.classList.add('done');
+}
+
+function showStep(n) {
+  document.getElementById('body' + n).classList.remove('hidden');
+}
+
+// ── Step 1: Source picker ─────────────────────────────────────────────────────
+
+btnPickSrc.onclick = () => sendMessage('pickSource', {});
+
+onMessage('sourceChosen', msg => {
+  srcFolder = msg.folder;
+  srcDisplay.textContent = msg.folder;
+  srcWarn.style.display  = msg.valid ? 'none' : '';
+  btnScan.disabled       = false;
+});
+
+// ── Step 2: Scan ──────────────────────────────────────────────────────────────
+
+btnScan.onclick = () => {
+  if (!srcFolder) return;
+  btnScan.disabled = true;
+  showStep(2);
+  body2.classList.remove('hidden');
+  scanProgress.style.display = '';
+  scanResults.style.display  = 'none';
+  scanError.style.display    = 'none';
+  sendMessage('scan', { folder: srcFolder });
+};
+
+onMessage('scanProgress', msg => {
+  scanProgressTx.textContent = msg.text;
+});
+
+onMessage('scanDone', msg => {
+  scanProgress.style.display = 'none';
+  scanResults.style.display  = '';
+  statTotal.textContent    = msg.total;
+  statHtml.textContent     = msg.htmlCount;
+  statWithDate.textContent = msg.withDate;
+  statNoDate.textContent   = msg.noDate;
+  markDone(1);
+  markDone(2);
+  showStep(3);
+  scanOk = true;
+});
+
+onMessage('scanError', msg => {
+  scanProgress.style.display = 'none';
+  scanError.style.display    = '';
+  scanError.textContent      = '✗ ' + msg.message;
+  btnScan.disabled = false;
+});
+
+// ── Step 3: Target picker ─────────────────────────────────────────────────────
+
+btnPickDest.onclick = () => sendMessage('pickTarget', {});
+
+onMessage('targetChosen', msg => {
+  destFolder = msg.folder;
+  destDisplay.textContent = msg.folder;
+  btnImport.disabled = false;
+});
+
+// ── Step 4: Import ────────────────────────────────────────────────────────────
+
+btnImport.onclick = () => {
+  if (!destFolder || !scanOk) return;
+  btnImport.disabled = true;
+  btnPickDest.disabled = true;
+  showStep(4);
+  body4.classList.remove('hidden');
+  importLog.innerHTML = '';
+  importSummary.style.display = 'none';
+  btnAbort.style.display    = '';
+  btnNewImport.style.display = 'none';
+  markDone(3);
+  sendMessage('import', {
+    targetFolder: destFolder,
+    copyUnknown:  /** @type {HTMLInputElement} */ (chkUnknown).checked,
+  });
+};
+
+onMessage('importStart', msg => {
+  importProgressTx.textContent = `0 / ${msg.total} files…`;
+  importBar.style.width = '0%';
+});
+
+onMessage('importProgress', msg => {
+  const pct = Math.round((msg.done / msg.total) * 100);
+  importBar.style.width = pct + '%';
+  importProgressTx.textContent = `${msg.done} / ${msg.total} — ${msg.file}`;
+});
+
+onMessage('importLog', msg => {
+  const line = document.createElement('div');
+  line.className = 'log-line ' +
+    (msg.text.startsWith('✓') ? 'log-ok' : msg.text.startsWith('✗') ? 'log-err' : 'log-warn');
+  line.textContent = msg.text;
+  importLog.appendChild(line);
+  importLog.scrollTop = importLog.scrollHeight;
+});
+
+onMessage('importDone', msg => {
+  importBar.style.width = '100%';
+  importProgressTx.textContent = msg.status === 'aborted' ? 'Aborted.' : 'Done.';
+  importSummary.style.display = '';
+  importSummary.textContent =
+    `Copied ${msg.copied}  ·  Skipped ${msg.skipped}  ·  Errors ${msg.errors}`;
+  btnAbort.style.display     = 'none';
+  btnNewImport.style.display = '';
+  markDone(4);
+});
+
+btnAbort.onclick = () => {
+  sendMessage('abort', {});
+  btnAbort.disabled = true;
+  importProgressTx.textContent = 'Aborting…';
+};
+
+btnNewImport.onclick = () => {
+  // Reset state
+  srcFolder  = '';
+  destFolder = '';
+  scanOk     = false;
+
+  ['1','2','3','4'].forEach(n => {
+    document.getElementById('body' + n).classList.add('hidden');
+    const num = document.getElementById('num' + n);
+    num.textContent = n;
+    num.classList.remove('done');
+  });
+  document.getElementById('body1').classList.remove('hidden');
+
+  srcDisplay.textContent  = 'No folder selected';
+  destDisplay.textContent = 'No folder selected';
+  srcWarn.style.display   = 'none';
+  btnScan.disabled        = true;
+  btnImport.disabled      = true;
+  btnPickDest.disabled    = false;
+  btnAbort.style.display  = 'none';
+  btnNewImport.style.display = 'none';
+  importSummary.style.display = 'none';
+};
+</script>
+</body>
+</html>

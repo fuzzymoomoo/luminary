@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src {{cspSource}} data: blob:; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>Month Grid</title>
+  <style>/* __SHARED_CSS__ */</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h2 id="title">Loading…</h2>
+  <span class="selection-count" id="selCount">0 selected</span>
+  <div class="spacer"></div>
+  <button class="secondary" id="btnSelectAll">Select All</button>
+  <button class="secondary" id="btnClear">Clear</button>
+  <button id="btnTag" disabled>Add Tag</button>
+  <button id="btnExport" disabled>Export Selected</button>
+  <button id="btnDelete" class="danger" disabled>Delete Selected</button>
+</div>
+
+<div id="grid" class="photo-grid"></div>
+
+<div id="emptyState" class="empty-state" style="display:none">
+  <div class="empty-icon">📷</div>
+  <div class="empty-label">No media in this month</div>
+</div>
+
+<script nonce="{{nonce}}">
+/* __SHARED_JS__ */
+
+/** @type {{ path:string, name:string, ext:string, size:number, takenAt:number, uri:string|null, isImage:boolean, tags:string[] }[]} */
+let items = [];
+/** @type {Set<string>} */
+const selected = new Set();
+let allTags = [];
+
+const grid      = document.getElementById('grid');
+const title     = document.getElementById('title');
+const selCount  = document.getElementById('selCount');
+const btnTag    = document.getElementById('btnTag');
+const btnExport = document.getElementById('btnExport');
+const btnDelete = document.getElementById('btnDelete');
+const emptyState = document.getElementById('emptyState');
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function render(data) {
+  items   = data.items;
+  allTags = data.allTags || [];
+  title.textContent = `${data.monthName} ${data.year}  —  ${items.length.toLocaleString()} items`;
+  selected.clear();
+  buildGrid();
+  updateToolbar();
+}
+
+function buildGrid() {
+  grid.innerHTML = '';
+  if (!items.length) {
+    emptyState.style.display = '';
+    grid.style.display = 'none';
+    return;
+  }
+  emptyState.style.display = 'none';
+  grid.style.display = '';
+
+  const frag = document.createDocumentFragment();
+  for (const item of items) {
+    frag.appendChild(buildCell(item));
+  }
+  grid.appendChild(frag);
+}
+
+function buildCell(item) {
+  const cell = document.createElement('div');
+  cell.className = 'photo-cell';
+  cell.dataset.path = item.path;
+
+  // Thumbnail or icon
+  if (item.isImage && item.uri) {
+    const img = document.createElement('img');
+    img.className = 'cell-thumb';
+    img.loading   = 'lazy';
+    img.src       = item.uri;
+    img.alt       = item.name;
+    cell.appendChild(img);
+  } else {
+    const icon = document.createElement('div');
+    icon.className   = 'cell-icon';
+    icon.textContent = fileTypeIcon(item.ext);
+    cell.appendChild(icon);
+  }
+
+  // Check mark overlay
+  const check = document.createElement('div');
+  check.className   = 'cell-check';
+  check.textContent = '✓';
+  cell.appendChild(check);
+
+  // Info row
+  const info = document.createElement('div');
+  info.className = 'cell-info';
+
+  const nameEl = document.createElement('div');
+  nameEl.className   = 'cell-name';
+  nameEl.textContent = item.name;
+  nameEl.title       = item.path;
+  info.appendChild(nameEl);
+
+  const dateEl = document.createElement('div');
+  dateEl.className   = 'cell-date';
+  dateEl.textContent = formatDate(item.takenAt);
+  info.appendChild(dateEl);
+
+  // Tags
+  if (item.tags && item.tags.length) {
+    const tagWrap = document.createElement('div');
+    tagWrap.className = 'cell-tags';
+    for (const tag of item.tags) {
+      const badge = document.createElement('span');
+      badge.className = 'tag-badge';
+      badge.textContent = tag;
+      const rm = document.createElement('button');
+      rm.className   = 'remove-tag';
+      rm.textContent = '×';
+      rm.title       = `Remove tag "${tag}"`;
+      rm.onclick = (e) => {
+        e.stopPropagation();
+        sendMessage('removeTag', { filePath: item.path, tag });
+      };
+      badge.appendChild(rm);
+      tagWrap.appendChild(badge);
+    }
+    info.appendChild(tagWrap);
+  }
+
+  cell.appendChild(info);
+
+  // Click to toggle selection
+  cell.addEventListener('click', () => toggleSelect(item.path, cell));
+
+  // Right-click context
+  cell.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    showContextMenu(e, item);
+  });
+
+  if (selected.has(item.path)) cell.classList.add('selected');
+
+  return cell;
+}
+
+// ── Selection ─────────────────────────────────────────────────────────────────
+
+function toggleSelect(filePath, cell) {
+  if (selected.has(filePath)) {
+    selected.delete(filePath);
+    cell.classList.remove('selected');
+  } else {
+    selected.add(filePath);
+    cell.classList.add('selected');
+  }
+  updateToolbar();
+}
+
+function updateToolbar() {
+  const n = selected.size;
+  selCount.textContent = n === 0 ? '0 selected' : `${n.toLocaleString()} selected`;
+  btnTag.disabled    = n === 0;
+  btnExport.disabled = n === 0;
+  btnDelete.disabled = n === 0;
+}
+
+document.getElementById('btnSelectAll').onclick = () => {
+  for (const item of items) selected.add(item.path);
+  grid.querySelectorAll('.photo-cell').forEach(c => c.classList.add('selected'));
+  updateToolbar();
+};
+
+document.getElementById('btnClear').onclick = () => {
+  selected.clear();
+  grid.querySelectorAll('.photo-cell').forEach(c => c.classList.remove('selected'));
+  updateToolbar();
+};
+
+// ── Add tag button ────────────────────────────────────────────────────────────
+
+btnTag.onclick = () => {
+  sendMessage('addTag', { filePaths: [...selected] });
+};
+
+// ── Export selected ───────────────────────────────────────────────────────────
+
+btnExport.onclick = () => {
+  sendMessage('openExport', { filePaths: [...selected] });
+};
+
+// ── Delete selected ───────────────────────────────────────────────────────────
+
+btnDelete.onclick = () => {
+  sendMessage('deleteSelected', { filePaths: [...selected] });
+};
+
+// ── Context menu (minimal inline) ─────────────────────────────────────────────
+
+function showContextMenu(e, item) {
+  // Remove any existing menu
+  document.querySelectorAll('.ctx-menu').forEach(el => el.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu';
+  Object.assign(menu.style, {
+    position: 'fixed',
+    top:  `${e.clientY}px`,
+    left: `${e.clientX}px`,
+    background: 'var(--vscode-menu-background, #252526)',
+    border: '1px solid var(--vscode-menu-border, #454545)',
+    borderRadius: '3px',
+    padding: '4px 0',
+    zIndex: '1000',
+    minWidth: '160px',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+    fontSize: '12px',
+  });
+
+  const addItem = (label, fn) => {
+    const li = document.createElement('div');
+    li.textContent = label;
+    Object.assign(li.style, {
+      padding: '5px 16px',
+      cursor: 'pointer',
+      color: 'var(--vscode-menu-foreground, inherit)',
+    });
+    li.onmouseenter = () => li.style.background = 'var(--vscode-list-hoverBackground)';
+    li.onmouseleave = () => li.style.background = '';
+    li.onclick = () => { menu.remove(); fn(); };
+    menu.appendChild(li);
+  };
+
+  if (!selected.has(item.path)) {
+    selected.add(item.path);
+    const cell = grid.querySelector(`[data-path="${CSS.escape(item.path)}"]`);
+    if (cell) cell.classList.add('selected');
+    updateToolbar();
+  }
+
+  addItem('Add tag to selected…', () => {
+    sendMessage('addTag', { filePaths: [...selected] });
+  });
+
+  if (allTags.length) {
+    const sep = document.createElement('div');
+    Object.assign(sep.style, { height: '1px', background: 'var(--vscode-panel-border, #333)', margin: '4px 0' });
+    menu.appendChild(sep);
+    for (const t of allTags.slice(0, 10)) {
+      addItem(`  Tag: ${t}`, () => sendMessage('addTag', { filePaths: [...selected], tag: t }));
+    }
+  }
+
+  const sep2 = document.createElement('div');
+  Object.assign(sep2.style, { height: '1px', background: 'var(--vscode-panel-border, #333)', margin: '4px 0' });
+  menu.appendChild(sep2);
+  addItem('Reveal in Explorer', () => sendMessage('openInExplorer', { filePath: item.path }));
+
+  document.body.appendChild(menu);
+  setTimeout(() => document.addEventListener('click', () => menu.remove(), { once: true }), 0);
+}
+
+// ── Message handlers ──────────────────────────────────────────────────────────
+
+onMessage('init', render);
+
+// Signal ready
+sendMessage('ready', {});
+</script>
+</body>
+</html>

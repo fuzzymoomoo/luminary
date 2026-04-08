@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src {{cspSource}} data: blob:; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>Tags</title>
+  <style>
+/* __SHARED_CSS__ */
+
+/* ── Year / month grouping in right pane ── */
+.year-group { margin-bottom: 10px; }
+
+.year-group-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; cursor: pointer; border-radius: 3px;
+  font-size: 13px; font-weight: 600;
+  background: var(--vscode-sideBar-background, #252526);
+  margin-bottom: 4px; user-select: none;
+}
+.year-group-header:hover { background: var(--vscode-list-hoverBackground); }
+.year-group-header::before { content: '▼'; font-size: 9px; margin-right: 4px; }
+.year-group-header.collapsed::before { content: '▶'; }
+.year-group-count { font-size: 11px; color: var(--vscode-descriptionForeground); margin-left: auto; }
+.year-group-body { padding-left: 8px; }
+.year-group-body.collapsed { display: none; }
+
+.month-group { margin-bottom: 8px; }
+.month-group-header {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 8px; cursor: pointer;
+  font-size: 12px; font-weight: 500;
+  color: var(--vscode-descriptionForeground);
+  border-left: 2px solid var(--vscode-panel-border, #444);
+  margin-bottom: 6px; user-select: none;
+}
+.month-group-header:hover { color: var(--vscode-foreground); }
+.month-group-header::before { content: '▼'; font-size: 8px; margin-right: 2px; }
+.month-group-header.collapsed::before { content: '▶'; }
+.month-group-grid { padding: 0 0 4px 8px; }
+.month-group-grid.collapsed { display: none; }
+  </style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h2>Tags</h2>
+  <div class="spacer"></div>
+  <span class="selection-count" id="tagCount"></span>
+</div>
+
+<div style="display:grid;grid-template-columns:220px 1fr;height:calc(100vh - 44px)">
+
+  <!-- Left: tag list -->
+  <div style="border-right:1px solid var(--vscode-panel-border,#333);overflow-y:auto;padding:12px 0;">
+    <div id="tagList" class="tag-list"></div>
+    <div id="emptyTags" class="empty-state" style="display:none">
+      <div class="empty-icon">🏷️</div>
+      <div class="empty-label">No tags yet</div>
+      <div style="font-size:11px">Open a photo month and right-click to add tags</div>
+    </div>
+  </div>
+
+  <!-- Right: files for selected tag, grouped by year/month -->
+  <div style="overflow-y:auto;padding:16px;">
+    <div id="tagFilesHeader" style="font-size:12px;font-weight:600;margin-bottom:12px;display:none"></div>
+    <div id="tagFilesGrid"></div>
+    <div id="tagFilesEmpty" class="empty-state" style="display:none">
+      <div class="empty-icon">👈</div>
+      <div class="empty-label">Select a tag to see its files</div>
+    </div>
+    <div id="exportTagBtn" style="display:none;margin-top:12px">
+      <button id="btnExportTag">Export this tag's files…</button>
+    </div>
+  </div>
+
+</div>
+
+<script nonce="{{nonce}}">
+/* __SHARED_JS__ */
+
+const MONTH_NAMES = [
+  'January','February','March','April','May','June',
+  'July','August','September','October','November','December'
+];
+
+let allTagData = [];
+let activeTag  = null;
+
+const tagList        = document.getElementById('tagList');
+const tagCount       = document.getElementById('tagCount');
+const emptyTags      = document.getElementById('emptyTags');
+const tagFilesHeader = document.getElementById('tagFilesHeader');
+const tagFilesGrid   = document.getElementById('tagFilesGrid');
+const tagFilesEmpty  = document.getElementById('tagFilesEmpty');
+const exportTagBtn   = document.getElementById('exportTagBtn');
+
+// ── Render tag list ───────────────────────────────────────────────────────────
+
+function renderTags(tags, highlightTag) {
+  allTagData = tags;
+  tagList.innerHTML = '';
+
+  if (!tags.length) {
+    emptyTags.style.display = '';
+    tagCount.textContent    = '';
+    return;
+  }
+  emptyTags.style.display = 'none';
+  tagCount.textContent    = `${tags.length} tag${tags.length !== 1 ? 's' : ''}`;
+
+  for (const t of tags) {
+    const row = document.createElement('div');
+    row.className = 'tag-row';
+    if (t.tag === highlightTag) row.classList.add('active');
+
+    row.innerHTML = `
+      <span class="tag-badge" style="pointer-events:none">${t.tag}</span>
+      <span class="tag-name"></span>
+      <span class="tag-count">${t.count}</span>
+      <div class="tag-actions"></div>`;
+
+    const actions = row.querySelector('.tag-actions');
+
+    const btnRename = document.createElement('button');
+    btnRename.className   = 'secondary';
+    btnRename.textContent = 'Rename';
+    btnRename.style.cssText = 'font-size:11px;padding:2px 6px';
+    btnRename.onclick = e => { e.stopPropagation(); sendMessage('renameTag', { tag: t.tag }); };
+    actions.appendChild(btnRename);
+
+    const btnDelete = document.createElement('button');
+    btnDelete.className   = 'danger';
+    btnDelete.textContent = 'Delete';
+    btnDelete.style.cssText = 'font-size:11px;padding:2px 6px';
+    btnDelete.onclick = e => { e.stopPropagation(); sendMessage('deleteTag', { tag: t.tag }); };
+    actions.appendChild(btnDelete);
+
+    row.onclick = () => selectTag(t.tag);
+    tagList.appendChild(row);
+  }
+
+  if (highlightTag) selectTag(highlightTag);
+  else if (activeTag) selectTag(activeTag);
+}
+
+// ── Select tag — show files grouped by year/month ─────────────────────────────
+
+function selectTag(tagName) {
+  activeTag = tagName;
+
+  tagList.querySelectorAll('.tag-row').forEach(r => r.classList.remove('active'));
+  const tagData = allTagData.find(t => t.tag === tagName);
+  if (!tagData) return;
+
+  const rowEl = [...tagList.querySelectorAll('.tag-row')]
+    .find(r => r.querySelector('.tag-badge')?.textContent === tagName);
+  if (rowEl) rowEl.classList.add('active');
+
+  tagFilesEmpty.style.display  = 'none';
+  tagFilesHeader.style.display = '';
+  tagFilesHeader.textContent   = `${tagData.count} file${tagData.count !== 1 ? 's' : ''} tagged "${tagName}"`;
+
+  // Group by year → month
+  /** @type {{ [year: string]: { [mo: string]: any[] } }} */
+  const grouped = {};
+  for (const file of tagData.files) {
+    const d    = new Date(file.takenAt || 0);
+    const year = file.takenAt ? String(d.getFullYear()) : 'Unknown date';
+    const mo   = file.takenAt ? String(d.getMonth())    : '-1';
+    if (!grouped[year])    grouped[year]    = {};
+    if (!grouped[year][mo]) grouped[year][mo] = [];
+    grouped[year][mo].push(file);
+  }
+
+  tagFilesGrid.innerHTML = '';
+
+  const years = Object.keys(grouped).sort((a, b) => {
+    if (a === 'Unknown date') return 1;
+    if (b === 'Unknown date') return -1;
+    return Number(b) - Number(a);
+  });
+
+  years.forEach((year, yearIdx) => {
+    const totalInYear = Object.values(grouped[year]).reduce((n, a) => n + a.length, 0);
+
+    const section = document.createElement('div');
+    section.className = 'year-group';
+
+    const hdr = document.createElement('div');
+    hdr.className = 'year-group-header';
+    if (yearIdx > 0) hdr.classList.add('collapsed');
+    hdr.innerHTML = `${year}<span class="year-group-count">${totalInYear}</span>`;
+
+    const body = document.createElement('div');
+    body.className = 'year-group-body';
+    if (yearIdx > 0) body.classList.add('collapsed');
+
+    hdr.onclick = () => { hdr.classList.toggle('collapsed'); body.classList.toggle('collapsed'); };
+
+    // Months sorted newest first
+    const months = Object.keys(grouped[year]).sort((a, b) => Number(b) - Number(a));
+    for (const mo of months) {
+      const moFiles = grouped[year][mo];
+      const moName  = mo === '-1' ? 'Unknown' : MONTH_NAMES[Number(mo)];
+
+      const mSection = document.createElement('div');
+      mSection.className = 'month-group';
+
+      const mHdr = document.createElement('div');
+      mHdr.className = 'month-group-header';
+      mHdr.innerHTML = `${moName}<span class="year-group-count">${moFiles.length}</span>`;
+
+      const mGrid = document.createElement('div');
+      mGrid.className = 'photo-grid month-group-grid';
+      mGrid.style.padding = '0';
+      for (const file of moFiles) mGrid.appendChild(buildFileCell(file, tagName));
+
+      mHdr.onclick = () => { mHdr.classList.toggle('collapsed'); mGrid.classList.toggle('collapsed'); };
+
+      mSection.append(mHdr, mGrid);
+      body.appendChild(mSection);
+    }
+
+    section.append(hdr, body);
+    tagFilesGrid.appendChild(section);
+  });
+
+  exportTagBtn.style.display = '';
+  document.getElementById('btnExportTag').onclick = () => {
+    sendMessage('exportTag', { filePaths: tagData.files.map(f => f.path) });
+  };
+}
+
+function buildFileCell(file, currentTag) {
+  const cell = document.createElement('div');
+  cell.className = 'photo-cell';
+
+  if (file.isImage && file.uri) {
+    const img = document.createElement('img');
+    img.className = 'cell-thumb'; img.loading = 'lazy'; img.src = file.uri; img.alt = file.name;
+    cell.appendChild(img);
+  } else {
+    const icon = document.createElement('div');
+    icon.className = 'cell-icon'; icon.textContent = fileTypeIcon(file.ext);
+    cell.appendChild(icon);
+  }
+
+  const info = document.createElement('div');
+  info.className = 'cell-info';
+
+  const nm = document.createElement('div');
+  nm.className = 'cell-name'; nm.textContent = file.name; nm.title = file.path;
+  info.appendChild(nm);
+
+  const badge = document.createElement('span');
+  badge.className = 'tag-badge'; badge.style.marginTop = '3px'; badge.textContent = currentTag;
+  const rm = document.createElement('button');
+  rm.className = 'remove-tag'; rm.textContent = '×';
+  rm.title = `Remove "${currentTag}" from this file`;
+  rm.onclick = e => { e.stopPropagation(); sendMessage('removeTagFromFile', { filePath: file.path, tag: currentTag }); };
+  badge.appendChild(rm);
+  info.appendChild(badge);
+
+  cell.appendChild(info);
+  return cell;
+}
+
+// ── Messages ──────────────────────────────────────────────────────────────────
+
+onMessage('init', msg => {
+  renderTags(msg.tags, msg.highlightTag);
+  if (!msg.highlightTag && !activeTag) {
+    tagFilesEmpty.style.display  = '';
+    tagFilesGrid.innerHTML       = '';
+    tagFilesHeader.style.display = 'none';
+    exportTagBtn.style.display   = 'none';
+  }
+});
+
+sendMessage('ready', {});
+</script>
+</body>
+</html>

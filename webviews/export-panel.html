@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'none'; img-src {{cspSource}} data:; style-src 'unsafe-inline'; script-src 'nonce-{{nonce}}';">
+  <title>Export</title>
+  <style>/* __SHARED_CSS__ */</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <h2>Export</h2>
+  <div class="spacer"></div>
+  <span class="selection-count" id="selCount">0 selected</span>
+  <button class="secondary" id="btnClearSel">Clear selection</button>
+</div>
+
+<div class="export-layout">
+
+  <!-- Left sidebar: timeline picker -->
+  <div class="export-sidebar">
+    <div style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground)">
+      SELECT BY MONTH / YEAR
+    </div>
+    <div id="timelineTree"></div>
+  </div>
+
+  <!-- Right: selection + export controls -->
+  <div class="export-main">
+
+    <div class="export-selection-info" id="selInfo">
+      Select months from the timeline, or files will be added here from the photo grid.
+    </div>
+
+    <!-- High-res export -->
+    <div class="export-section">
+      <div class="export-section-header">📁  Export High-Res Originals</div>
+      <div class="export-section-body">
+        <div style="font-size:12px;color:var(--vscode-descriptionForeground)">
+          Copies selected files at full resolution to a folder.
+        </div>
+        <div class="path-row">
+          <div class="path-display" id="highResFolder">No folder chosen</div>
+          <button class="secondary" id="btnPickFolder">Choose folder…</button>
+        </div>
+        <div>
+          <button id="btnExportHighRes" disabled>Copy originals</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Low-res zip -->
+    <div class="export-section">
+      <div class="export-section-header">🗜️  Export Low-Res Zip (1500px · 80% quality)</div>
+      <div class="export-section-body">
+        <div style="font-size:12px;color:var(--vscode-descriptionForeground)">
+          Resizes images to 1500 px on the long edge at 80% JPEG quality and packs into a zip.
+          Videos are included as-is.
+        </div>
+        <div class="path-row">
+          <div class="path-display" id="zipPathDisplay">No path chosen</div>
+          <button class="secondary" id="btnPickZip">Choose zip path…</button>
+        </div>
+        <div>
+          <button id="btnExportLowRes" disabled>Build zip</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Progress -->
+    <div id="progressArea" style="display:none" class="export-section">
+      <div class="export-section-header">Progress</div>
+      <div class="export-section-body">
+        <div class="progress-label" id="progressPhase">Working…</div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+        </div>
+        <div class="progress-label" id="progressNumbers"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script nonce="{{nonce}}">
+/* __SHARED_JS__ */
+
+// ── State ─────────────────────────────────────────────────────────────────────
+/** @type {Set<string>} filePaths */
+const selectedFiles = new Set();
+let highResFolder = '';
+let zipPath       = '';
+
+// Months selected via sidebar checkboxes: month → file array
+/** @type {Map<string, string[]>} key="year-month" */
+const monthFiles = new Map();
+
+// ── DOM refs ──────────────────────────────────────────────────────────────────
+const selCount       = document.getElementById('selCount');
+const selInfo        = document.getElementById('selInfo');
+const timelineTree   = document.getElementById('timelineTree');
+const highResFolderEl = document.getElementById('highResFolder');
+const zipPathEl      = document.getElementById('zipPathDisplay');
+const btnExportHighRes = document.getElementById('btnExportHighRes');
+const btnExportLowRes  = document.getElementById('btnExportLowRes');
+const progressArea   = document.getElementById('progressArea');
+const progressPhase  = document.getElementById('progressPhase');
+const progressFill   = document.getElementById('progressFill');
+const progressNumbers = document.getElementById('progressNumbers');
+
+// ── Timeline sidebar ──────────────────────────────────────────────────────────
+
+function buildTimeline(years) {
+  timelineTree.innerHTML = '';
+  for (const yr of years) {
+    const yearWrap = document.createElement('div');
+    yearWrap.className = 'year-group';
+
+    const yearHeader = document.createElement('div');
+    yearHeader.className = 'year-header';
+
+    const yearChk = document.createElement('input');
+    yearChk.type  = 'checkbox';
+    yearChk.id    = `yr-${yr.year}`;
+
+    const yearLabel = document.createElement('label');
+    yearLabel.htmlFor   = yearChk.id;
+    yearLabel.textContent = yr.year;
+    yearLabel.style.cursor = 'pointer';
+
+    const yearCount = document.createElement('span');
+    yearCount.style.cssText = 'font-size:11px;color:var(--vscode-descriptionForeground);font-weight:400';
+
+    yearHeader.appendChild(yearChk);
+    yearHeader.appendChild(yearLabel);
+    yearHeader.appendChild(yearCount);
+    yearWrap.appendChild(yearHeader);
+
+    const monthsWrap = document.createElement('div');
+
+    const monthCheckboxes = [];
+
+    for (const mn of yr.months) {
+      const key = `${yr.year}-${mn.month}`;
+      monthFiles.set(key, mn.files);
+
+      const row = document.createElement('div');
+      row.className = 'month-row';
+
+      const chk = document.createElement('input');
+      chk.type = 'checkbox';
+      chk.id   = `mn-${key}`;
+      chk.dataset.key = key;
+      monthCheckboxes.push(chk);
+
+      const lbl = document.createElement('label');
+      lbl.htmlFor     = chk.id;
+      lbl.textContent = monthName(mn.month);
+      lbl.style.cursor = 'pointer';
+      lbl.style.flex   = '1';
+
+      const cnt = document.createElement('span');
+      cnt.style.cssText  = 'font-size:11px;color:var(--vscode-descriptionForeground)';
+      cnt.textContent    = mn.count.toLocaleString();
+
+      row.appendChild(chk);
+      row.appendChild(lbl);
+      row.appendChild(cnt);
+      monthsWrap.appendChild(row);
+
+      chk.onchange = () => {
+        if (chk.checked) mn.files.forEach(f => selectedFiles.add(f));
+        else mn.files.forEach(f => selectedFiles.delete(f));
+        syncYearCheck(yearChk, monthCheckboxes);
+        updateSelCount();
+      };
+    }
+
+    // Year total
+    const yrTotal = yr.months.reduce((s, m) => s + m.count, 0);
+    yearCount.textContent = `  ${yrTotal.toLocaleString()}`;
+
+    yearChk.onchange = () => {
+      for (const mChk of monthCheckboxes) {
+        mChk.checked = yearChk.checked;
+        const key = mChk.dataset.key;
+        const files = monthFiles.get(key) || [];
+        if (yearChk.checked) files.forEach(f => selectedFiles.add(f));
+        else files.forEach(f => selectedFiles.delete(f));
+      }
+      yearChk.indeterminate = false;
+      updateSelCount();
+    };
+
+    yearWrap.appendChild(monthsWrap);
+    timelineTree.appendChild(yearWrap);
+  }
+}
+
+function syncYearCheck(yearChk, monthCheckboxes) {
+  const total   = monthCheckboxes.length;
+  const checked = monthCheckboxes.filter(c => c.checked).length;
+  yearChk.checked       = checked === total;
+  yearChk.indeterminate = checked > 0 && checked < total;
+}
+
+function monthName(m) {
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return names[Number(m) - 1] || m;
+}
+
+function updateSelCount() {
+  const n = selectedFiles.size;
+  selCount.textContent = `${n.toLocaleString()} file${n !== 1 ? 's' : ''} selected`;
+  selInfo.textContent  = n
+    ? `${n.toLocaleString()} files selected for export`
+    : 'Select months from the timeline, or files will be added from the photo grid.';
+  updateExportButtons();
+}
+
+function updateExportButtons() {
+  const hasFiles  = selectedFiles.size > 0;
+  const hasFolder = highResFolder.length > 0;
+  const hasZip    = zipPath.length > 0;
+  btnExportHighRes.disabled = !(hasFiles && hasFolder);
+  btnExportLowRes.disabled  = !(hasFiles && hasZip);
+}
+
+// ── Clear selection ───────────────────────────────────────────────────────────
+
+document.getElementById('btnClearSel').onclick = () => {
+  selectedFiles.clear();
+  timelineTree.querySelectorAll('input[type="checkbox"]').forEach(c => {
+    /** @type {HTMLInputElement} */ (c).checked       = false;
+    /** @type {HTMLInputElement} */ (c).indeterminate = false;
+  });
+  updateSelCount();
+};
+
+// ── Folder / path pickers ─────────────────────────────────────────────────────
+
+document.getElementById('btnPickFolder').onclick = () => sendMessage('pickOutputFolder', {});
+document.getElementById('btnPickZip').onclick    = () => sendMessage('pickZipPath', {});
+
+onMessage('outputFolder', (msg) => {
+  highResFolder = msg.folder;
+  highResFolderEl.textContent = msg.folder;
+  updateExportButtons();
+});
+
+onMessage('zipPath', (msg) => {
+  zipPath = msg.zipPath;
+  zipPathEl.textContent = msg.zipPath;
+  updateExportButtons();
+});
+
+// ── Export actions ────────────────────────────────────────────────────────────
+
+btnExportHighRes.onclick = () => {
+  if (!selectedFiles.size || !highResFolder) return;
+  sendMessage('exportHighRes', { filePaths: [...selectedFiles], outputDir: highResFolder });
+};
+
+btnExportLowRes.onclick = () => {
+  if (!selectedFiles.size || !zipPath) return;
+  sendMessage('exportLowRes', { filePaths: [...selectedFiles], zipPath });
+};
+
+// ── Progress ──────────────────────────────────────────────────────────────────
+
+onMessage('exportProgress', (msg) => {
+  progressArea.style.display = '';
+  progressPhase.textContent  = msg.phase || 'Working…';
+  const pct = msg.total > 0 ? Math.round(msg.done / msg.total * 100) : 0;
+  progressFill.style.width   = `${pct}%`;
+  progressNumbers.textContent = `${msg.done.toLocaleString()} / ${msg.total.toLocaleString()}`;
+  btnExportHighRes.disabled = true;
+  btnExportLowRes.disabled  = true;
+});
+
+onMessage('exportDone', (msg) => {
+  progressFill.style.width = '100%';
+  progressPhase.textContent = msg.success ? '✅  Done!' : `❌  ${msg.error || 'Failed'}`;
+  progressNumbers.textContent = '';
+  updateExportButtons();
+});
+
+// ── Receive timeline + added selection ───────────────────────────────────────
+
+onMessage('timeline', (msg) => buildTimeline(msg.years));
+
+onMessage('addSelection', (msg) => {
+  for (const fp of msg.filePaths) selectedFiles.add(fp);
+  updateSelCount();
+});
+
+sendMessage('ready', {});
+</script>
+</body>
+</html>
